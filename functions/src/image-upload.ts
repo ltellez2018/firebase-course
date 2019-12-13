@@ -1,8 +1,11 @@
 import * as functions from 'firebase-functions';
+
+import { db } from './init';
 const path  = require("path");
 const os  = require("os");
 const mkdirp  = require("mkdirp-promise");
 const spawn = require('child-process-promise').spawn;
+const rinraf = require('rimraf');
 const {Storage} = require('@google-cloud/firestore');
 
 const gcs = new Storage();
@@ -18,7 +21,7 @@ export const resizeThumbnail = functions.storage.object()
                          tempLocalDir = path.join(os.tmpdir(),fileDir);
     console.log('Thnmbnail generation started', fileFullPath,fileDir, fileName);
     
-        if(!contentType.startsWith("image/")) {
+        if(!contentType.startsWith("image/") || fileName.startsWith('thumb_')) {
             console.log('Exiting image processing');            
             return null;
         }
@@ -48,11 +51,25 @@ export const resizeThumbnail = functions.storage.object()
 
       console.log('Deploying the tuhmnail to storage:', outFilePath, outFilePath);
 
-      await bucket.upload(outFile, {destination: outFilePath, metadata});
+      const uploadFiles = await bucket.upload(outFile, {destination: outFilePath, metadata});
       
+       //delete local file
+        
+        rinraf.sync(tempLocalDir);
+        originalImageFike.delete();
 
+        // create link
+        const thumbnail = uploadFiles[0];
+        const url = thumbnail.getSignedUrl({action: 'read','expires': new Date(3000,0,1)});
+        console.log('generated sined url:', url);
 
+        // save thunmbail link
 
+        const frags = fileFullPath.split('/'), courseId = frags[1];
 
-        return null;
+        console.log('saving url to database:', courseId);
+        
+        return  db.doc(`courses/${courseId}`).update({uploadedImageUrl: url});
+        
+
     });
